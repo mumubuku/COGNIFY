@@ -1,4 +1,3 @@
-# ========== model_client.py ==========
 import os
 import httpx
 import json
@@ -6,13 +5,18 @@ from dotenv import load_dotenv
 from function_manager import FunctionManager
 from pathlib import Path
 import uuid
+from typing import List, Optional
+from pydantic import BaseModel
+from schemas.task_result import TaskResult  
 
 load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 BASE_URL = os.getenv("BASE_URL")
 
-async def ask_deepseek(prompt: str, use_function_calling: bool = False) -> str:
+
+
+async def ask_deepseek(prompt: str, use_function_calling: bool = False) -> TaskResult:
     url = f"{BASE_URL}/chat/completions"
     headers = {
         "Authorization": f"Bearer {API_KEY}",
@@ -25,7 +29,7 @@ async def ask_deepseek(prompt: str, use_function_calling: bool = False) -> str:
     ]
 
     payload = {
-        "model": "deepseek-r1-250120",
+        "model": "deepseek/deepseek-v3-0324",
         "messages": messages,
         "temperature": 0.3
     }
@@ -91,14 +95,21 @@ async def ask_deepseek(prompt: str, use_function_calling: bool = False) -> str:
                 continue
             else:
                 # 会话结束，保存完整对话日志
-                save_conversation_log(conversation_log)
-                return content or "(无内容输出)"
+                log_file = save_conversation_log(conversation_log)
 
+                used_tools = list({entry["tool_call"]["function_name"] for entry in conversation_log if "tool_call" in entry})
 
-def save_conversation_log(log_data: list):
+                return TaskResult(
+                    content=content or "(无内容输出)",
+                    used_tools=used_tools,
+                    logs_path=str(log_file)
+                )
+
+def save_conversation_log(log_data: list) -> Path:
     path = Path("outputs/conversation_logs")
     path.mkdir(parents=True, exist_ok=True)
     log_file = path / f"conversation_{uuid.uuid4()}.jsonl"
     with log_file.open("w", encoding="utf-8") as f:
         for entry in log_data:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return log_file
